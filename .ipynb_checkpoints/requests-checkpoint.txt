@@ -1,0 +1,13 @@
+streamlit
+google-cloud-bigquery
+anthropic
+pandas
+matplotlib
+seaborn
+plotly.express
+pandas.io.formats.style
+dotenv
+datetime
+requests
+sklearn.linear_model
+numpy
