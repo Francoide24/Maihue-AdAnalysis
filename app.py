@@ -11,18 +11,6 @@ from datetime import datetime
 import requests
 from sklearn.linear_model import LinearRegression
 import random
-# Obtener el token desde los secretos
-token = st.secrets["github"]["token"]
-
-# Construir la URL del repositorio con el token
-repo_url = f"https://{token}@github.com/Francoide24/Maihue-AdAnalysis.git"
-
-# Clonar el repositorio si no existe
-if not os.path.exists("Maihue-AdAnalysis"):
-    subprocess.run(["git", "clone", "-b", "main", repo_url], check=True)
-
-st.title("Maihue Ad Analysis")
-st.write("¡La aplicación está funcionando correctamente!")
 # ===============================
 # 2. CONFIGURACIÓN DE LA PÁGINA + ESTILO META ADS
 # (Debe ser lo primero que hace Streamlit)
