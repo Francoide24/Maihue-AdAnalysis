@@ -58,8 +58,8 @@ st.markdown(
     [data-testid="stSidebar"] {
         background: linear-gradient(
             180deg,
-            rgba(0, 72, 183, 0.95) 20%,
-            rgba(0, 72, 183, 0.85) 90%
+            rgba(0, 72, 183, 0.65) 20%,
+            rgba(0, 72, 183, 0.65) 90%
         );
         color: #ffffff;
     }
@@ -1188,48 +1188,98 @@ if selected_page == "Conversión":
         st.dataframe(df_final_table, use_container_width=True)
 
 elif selected_page == "Engagement":
+    # =========================================================================================
+    # TÍTULO DE LA PÁGINA
+    # =========================================================================================
     st.title("Análisis de Engagement")
-    st.markdown("<h3 style='color: #1877f2; font-weight: 700;'>Filtros de Datos</h3>", unsafe_allow_html=True)
 
-    start_date = st.date_input("Fecha de inicio", value=data["Date"].min())
-    end_date = st.date_input("Fecha de fin", value=data["Date"].max())
-    campaign_list = sorted(data["Campaignname"].dropna().unique())
-    selected_campaign = st.selectbox("Selecciona la Campaña", ["Todas"] + campaign_list)
-    adset_list = sorted(data["AdSetname"].dropna().unique())
-    selected_adset = st.selectbox("Selecciona el Conjunto de Anuncios", ["Todos"] + adset_list)
+    # =========================================================================================
+    # 2) FILTROS PRINCIPALES (EN SIDEBAR)
+    # =========================================================================================
+    with st.sidebar:
+        st.markdown("<h3 style='color: #ffffff; font-weight: 700;'>Filtros de Datos</h3>", unsafe_allow_html=True)
 
+        # 2.1) Rango de Fechas
+        start_date = st.date_input("Fecha de inicio", value=data["Date"].min())
+        end_date = st.date_input("Fecha de fin", value=data["Date"].max())
+
+        # 2.2) Campaignname
+        campaign_list = sorted(data["Campaignname"].dropna().unique())
+        selected_campaign = st.selectbox("Selecciona la Campaña", ["Todas"] + campaign_list)
+
+        # 2.3) Conjunto de Anuncios (AdSetname)
+        adset_list = sorted(data["AdSetname"].dropna().unique())
+        selected_adset = st.selectbox("Selecciona el Conjunto de Anuncios", ["Todos"] + adset_list)
+
+    # =========================================================================================
+    # APLICAR FILTROS PRINCIPALES
+    # =========================================================================================
     filtered_data = data.copy()
+
+    # Filtrar por rango de fechas
     filtered_data = filtered_data[
         (filtered_data["Date"] >= pd.to_datetime(start_date)) &
         (filtered_data["Date"] <= pd.to_datetime(end_date))
     ]
+
+    # Filtrar por Campaign
     if selected_campaign != "Todas":
         filtered_data = filtered_data[filtered_data["Campaignname"] == selected_campaign]
+
+    # Filtrar por AdSet
     if selected_adset != "Todos":
         filtered_data = filtered_data[filtered_data["AdSetname"] == selected_adset]
 
+    # =========================================================================================
+    # 3) FILTRO DE Link URL (dependiente de lo ya filtrado)
+    # =========================================================================================
+    link_list = sorted(filtered_data["Linkurl"].dropna().unique())
+    selected_links = st.sidebar.multiselect("Selecciona Link URL", link_list, default=link_list)
+
+    # Aplicar filtro de LinkURL
+    filtered_data = filtered_data[filtered_data["Linkurl"].isin(selected_links)]
+
+    # =========================================================================================
+    # 4) MULTISELECT de Anuncios (también dependiente)
+    # =========================================================================================
     adname_list = sorted(filtered_data["Adname"].dropna().unique())
-    selected_adnames = st.multiselect("Selecciona los Anuncios", adname_list, default=adname_list)
+    selected_adnames = st.sidebar.multiselect("Selecciona los Anuncios", adname_list, default=adname_list)
+
+    # Aplicar filtro de Anuncios
     filtered_data = filtered_data[filtered_data["Adname"].isin(selected_adnames)]
 
+    # =========================================================================================
+    # 5) GRÁFICO ORIGINAL: AWT_Trend vs CTR_Trend
+    # =========================================================================================
     st.markdown("<h3 style='color: #1877f2; font-weight: 700;'>Gráfico de Engagement con Tendencias</h3>", unsafe_allow_html=True)
 
     if not filtered_data.empty:
+        # 5.1) Construir daily_engagement con las columnas relevantes
         daily_engagement = filtered_data.groupby("Date", as_index=False).agg({
             "Videoaveragewatchtime": "mean",
             "Clicks": "sum",
             "Impressions": "sum"
         })
+
+        # CTR y orden
         daily_engagement["CTR"] = (daily_engagement["Clicks"] / daily_engagement["Impressions"]) * 100
         daily_engagement = daily_engagement.fillna(0).sort_values("Date")
+
+        # Suavizado CTR
         daily_engagement["CTR_Smoothed"] = daily_engagement["CTR"].rolling(window=3, min_periods=1).mean()
 
+        # Tendencias (regresión lineal) para AWT y CTR
+        import numpy as np
         x = np.arange(len(daily_engagement))
+
         slope_awt, intercept_awt = np.polyfit(x, daily_engagement["Videoaveragewatchtime"], 1)
         daily_engagement["AWT_Trend"] = slope_awt * x + intercept_awt
+
         slope_ctr, intercept_ctr = np.polyfit(x, daily_engagement["CTR_Smoothed"], 1)
         daily_engagement["CTR_Trend"] = slope_ctr * x + intercept_ctr
 
+        # 5.2) GRAFICO con Plotly Express
+        import plotly.express as px
         fig = px.line(
             daily_engagement,
             x="Date",
@@ -1238,11 +1288,13 @@ elif selected_page == "Engagement":
             labels={"value": "Valores", "variable": "Métrica"},
             markers=True,
         )
+        # Ajustar la traza de AW_TTrend
         fig.update_traces(
             line=dict(color="red", dash="solid"),
             marker=dict(symbol="circle", size=8),
             selector=dict(name="AWT_Trend"),
         )
+        # Agregar la CTR trend en eje Y2
         fig.add_scatter(
             x=daily_engagement["Date"],
             y=daily_engagement["CTR_Trend"],
@@ -1267,8 +1319,193 @@ elif selected_page == "Engagement":
             st.markdown(f"**Tendencia AWT**: y = {slope_awt:.2f}x + {intercept_awt:.2f}")
         with col2:
             st.markdown(f"**Tendencia CTR**: y = {slope_ctr:.4f}x + {intercept_ctr:.4f}")
+
+        # =====================================================================================
+        # 6) NUEVO GRÁFICO: Landingpageviews, PTP_total, ratio (PTP_total / Landingpageviews)
+        # =====================================================================================
+        daily_data2 = filtered_data.groupby("Date", as_index=False).agg({
+            "Landingpageviews": "sum",
+            "PTP_total": "sum"
+        }).sort_values("Date")
+
+        # ratio => en porcentaje
+        daily_data2["ratio_pct"] = daily_data2.apply(
+            lambda row: (row["PTP_total"] / row["Landingpageviews"]) * 100 if row["Landingpageviews"]>0 else 0,
+            axis=1
+        )
+
+        import plotly.graph_objects as go
+        fig2 = go.Figure()
+
+        # BARRAS => Landingpageviews
+        fig2.add_trace(
+            go.Bar(
+                x=daily_data2["Date"],
+                y=daily_data2["Landingpageviews"],
+                name="Landingpageviews",
+                marker_color="cornflowerblue"
+            )
+        )
+
+        # LÍNEA => PTP_total (Eje Y2)
+        fig2.add_trace(
+            go.Scatter(
+                x=daily_data2["Date"],
+                y=daily_data2["PTP_total"],
+                name="PTP_total",
+                mode="lines+markers",
+                line=dict(color="firebrick", width=3),
+                yaxis="y2"
+            )
+        )
+
+        # LÍNEA => ratio_pct (también en Eje Y2, estilo dash)
+        fig2.add_trace(
+            go.Scatter(
+                x=daily_data2["Date"],
+                y=daily_data2["ratio_pct"],
+                name="Ratio (%)",
+                mode="lines+markers",
+                line=dict(color="green", width=2, dash="dash"),
+                yaxis="y2"
+            )
+        )
+
+        fig2.update_layout(
+            title="Conversión de Landings",
+            xaxis=dict(title="Fecha"),
+            yaxis=dict(title="Landingpageviews"),
+            yaxis2=dict(
+                title="PTP_total / Ratio (%)",
+                overlaying="y",
+                side="right"
+            ),
+            legend_title="Métricas",
+            hovermode="x unified",
+            width=900,
+            height=600
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+
+        # =====================================================================================
+        # 7) TABLA DEPENDIENTE SÓLO DE FECHA Y CONJUNTO
+        #     (AdSetname, Adname, Impressions, Reach, Landingpageviews, ...
+        #      Postshares, Postsaves, Frequency, PTP_total, CPA, CPM, CPV, CTR_c, RatioConversion)
+        #  +  última fila de "TOTALES"
+        # =====================================================================================
+        st.markdown("## Resumen de Métricas (sólo filtrado por Fecha y Conjunto)")
+
+        # 7.1) Crear df_table con la lógica pedida:
+        df_table = data.copy()
+
+        # Filtrar sólo por fecha y adset (ignorando campaign, link, adname)
+        df_table = df_table[
+            (df_table["Date"] >= pd.to_datetime(start_date)) &
+            (df_table["Date"] <= pd.to_datetime(end_date))
+        ]
+        if selected_adset != "Todos":
+            df_table = df_table[df_table["AdSetname"] == selected_adset]
+
+        # 7.2) Agrupar por AdSet, Adname
+        df_agg = df_table.groupby(["AdSetname","Adname"], as_index=False).agg({
+            "Impressions":"sum",
+            "Reach":"sum",
+            "Landingpageviews":"sum",
+            "TotalCost":"sum",
+            "Postshares":"sum",
+            "Postsaves":"sum",
+            "Frequency":"mean",  # Asumes que Frequency promedia
+            "PTP_total":"sum"
+        })
+
+        # 7.3) Calcular columnas derivadas
+        df_agg["CPA"] = df_agg.apply(
+            lambda row: row["TotalCost"]/row["PTP_total"] if row["PTP_total"]>0 else 0,
+            axis=1
+        )
+        # CPM = (TotalCost / Impressions)*1000
+        df_agg["CPM"] = df_agg.apply(
+            lambda row: (row["TotalCost"]/row["Impressions"]*1000) if row["Impressions"]>0 else 0,
+            axis=1
+        )
+        # CPV = (TotalCost / Landingpageviews)
+        df_agg["CPV"] = df_agg.apply(
+            lambda row: row["TotalCost"]/row["Landingpageviews"] if row["Landingpageviews"]>0 else 0,
+            axis=1
+        )
+        # CTR_c = (Landingpageviews / Impressions)*100
+        df_agg["CTR_c"] = df_agg.apply(
+            lambda row: (row["Landingpageviews"]/row["Impressions"]*100) if row["Impressions"]>0 else 0,
+            axis=1
+        )
+        # RatioConversion = PTP_total / Landingpageviews
+        df_agg["RatioConversion"] = df_agg.apply(
+            lambda row: row["PTP_total"]/row["Landingpageviews"] if row["Landingpageviews"]>0 else 0,
+            axis=1
+        )
+
+        # 7.4) Ordenar columnas
+        df_agg = df_agg[[
+            "AdSetname","Adname","Impressions","Reach","Landingpageviews",
+            "TotalCost","Postshares","Postsaves","Frequency","PTP_total",
+            "CPA","CPM","CPV","CTR_c","RatioConversion"
+        ]]
+
+        # 7.5) Crear Fila de "TOTALES"
+        # Se suman las columnas que tengan sentido (Impressions, etc.)
+        # Frequency se puede promediar (o sumarse?). Aquí lo haremos promediar, 
+        # pero con un weighting. Te muestro un ejemplo simple, asumiendo sum:
+        # Haremos un approach práctico:
+        # - Sumas para la mayoría
+        # - Para 'Frequency' => se hace un promedio global (weighted?), 
+        #   por simplicidad, asumamos un average normal.
+        sum_impressions = df_agg["Impressions"].sum()
+        sum_reach = df_agg["Reach"].sum()
+        sum_lpviews = df_agg["Landingpageviews"].sum()
+        sum_cost = df_agg["TotalCost"].sum()
+        sum_postshares = df_agg["Postshares"].sum()
+        sum_postsaves = df_agg["Postsaves"].sum()
+        sum_ptp = df_agg["PTP_total"].sum()
+        # Frequency -> un average normal
+        avg_freq = df_agg["Frequency"].mean()
+
+        # Derivados totales
+        tot_cpa = (sum_cost/sum_ptp) if sum_ptp>0 else 0
+        tot_cpm = (sum_cost/sum_impressions*1000) if sum_impressions>0 else 0
+        tot_cpv = (sum_cost/sum_lpviews) if sum_lpviews>0 else 0
+        tot_ctr_c = (sum_lpviews/sum_impressions*100) if sum_impressions>0 else 0
+        tot_ratio = (sum_ptp/sum_lpviews) if sum_lpviews>0 else 0
+
+        # 7.6) Crear la fila TOT
+        df_tot = {
+            "AdSetname": "TOTAL",
+            "Adname": "",
+            "Impressions": sum_impressions,
+            "Reach": sum_reach,
+            "Landingpageviews": sum_lpviews,
+            "TotalCost": sum_cost,
+            "Postshares": sum_postshares,
+            "Postsaves": sum_postsaves,
+            "Frequency": avg_freq,
+            "PTP_total": sum_ptp,
+            "CPA": tot_cpa,
+            "CPM": tot_cpm,
+            "CPV": tot_cpv,
+            "CTR_c": tot_ctr_c,
+            "RatioConversion": tot_ratio
+        }
+
+        # 7.7) Convertir en DF y agregar al final
+        import pandas as pd
+        df_tot_row = pd.DataFrame([df_tot])
+        df_agg_final = pd.concat([df_agg, df_tot_row], ignore_index=True)
+
+        # 7.8) Mostrar la tabla
+        st.dataframe(df_agg_final, use_container_width=True)
+
     else:
         st.warning("No hay datos para mostrar con los filtros seleccionados.")
+
 
 elif selected_page == "Personalizado":
     st.title("Generador de Gráficas Personalizadas")
