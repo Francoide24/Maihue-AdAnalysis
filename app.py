@@ -11,17 +11,17 @@ from datetime import datetime
 import requests
 from sklearn.linear_model import LinearRegression
 import random
-import subprocess
 
-# Obtén el token desde secrets
-token = os.environ.get("github_token")
+# Obtener el token desde secrets
+token = st.secrets["github"]["token"]
 
-# Construye la URL del repositorio
+# Construir la URL del repositorio
 repo_url = f"https://{token}@github.com/Francoide24/Maihue-AdAnalysis.git"
 
-# Clona el repositorio si es necesario (asegúrate de usar el path correcto)
+# Clonar el repositorio si no existe
 if not os.path.exists("Maihue-AdAnalysis"):
-    subprocess.run(["git", "clone", "-b", "main", repo_url])
+    subprocess.run(["git", "clone", "-b", "main", repo_url], check=True)
+
 
 # ===============================
 # 2. CONFIGURACIÓN DE LA PÁGINA + ESTILO META ADS
