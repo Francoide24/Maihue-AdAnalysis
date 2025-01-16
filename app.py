@@ -228,8 +228,65 @@ if selected_page == "Conversión":
                 fecha_semana = fecha_actual - pd.Timedelta(days=6)
                 df_ult_semana = df[df["Date"] >= fecha_semana].copy()
 
+                                # ============ RESUMEN GENERAL  ============
+                # ============ 4) Leads del mes + última semana ============
+                resumen += "\n##### Resumen General\n"
+                leads_mes = df_mes_actual["PTP_total"].sum()
+                leads_semana = df_ult_semana["PTP_total"].sum()
+                pct_semana = (leads_semana/leads_mes*100) if leads_mes>0 else 0
+                resumen += (f"- Total leads del mes: **{leads_mes:.0f}**.\n"
+                            f"- Última semana: **{leads_semana:.0f}** leads "
+                            f"({pct_semana:.2f}% del total).\n")
+                
+                # ============ 3) Variación CPA (últ. 2 sem vs 2 sem ant) ============
+                cpa_2n = 0
+                cpa_2n_ant = 0
+
+                if df_ult_2sem["PTP_total"].sum() > 0:
+                    cpa_2n = df_ult_2sem["TotalCost"].sum() / df_ult_2sem["PTP_total"].sum()
+                if df_2sem_ant["PTP_total"].sum() > 0:
+                    cpa_2n_ant = df_2sem_ant["TotalCost"].sum() / df_2sem_ant["PTP_total"].sum()
+
+                var_cpa_global = ((cpa_2n - cpa_2n_ant) / cpa_2n_ant * 100) if cpa_2n_ant > 0 else 0
+                diff_dollar = cpa_2n - cpa_2n_ant  # Diferencia en dólares
+
+                if var_cpa_global > 0:
+                    difference_str = f"${abs(diff_dollar):,.2f} más alto ({abs(var_cpa_global):,.2f}%)"
+                elif var_cpa_global < 0:
+                    difference_str = f"${abs(diff_dollar):,.2f} más bajo ({abs(var_cpa_global):,.2f}%)"
+                else:
+                    difference_str = "igual"
+
+                resumen += (
+                    f"\n- CPA promedio de las últimas 2 semanas: ${cpa_2n:,.2f}; "
+                    f"${abs(diff_dollar):,.2f} {'más alto' if var_cpa_global > 0 else 'más bajo' if var_cpa_global < 0 else 'igual'} "
+                    f"({abs(var_cpa_global):,.2f}%) respecto a las 2 semanas anteriores.\n"
+)
+
+
+
+                # ============ 5) Regresión lineal de CPA (últ. 2 sem) ============
+                df_ok = df_ult_2sem[
+                    (df_ult_2sem["PTP_total"]>0) &
+                    (df_ult_2sem["TotalCost"]>0) &
+                    (df_ult_2sem["Impressions"]>0)
+                ].copy()
+                tendencias_cpa = []
+                if not df_ok.empty:
+                    for adname, grupo in df_ok.groupby("Adname"):
+                        grupo = grupo.sort_values("Date")
+                        if len(grupo)<2:
+                            continue
+                        x = np.arange(len(grupo)).reshape(-1,1)
+                        y = grupo.apply(lambda row: row["TotalCost"]/row["PTP_total"], axis=1).values.reshape(-1,1)
+                        model = LinearRegression().fit(x, y)
+                        pen = model.coef_[0][0]
+                        tendencias_cpa.append((adname, pen))
+                    tendencias_cpa.sort(key=lambda x: x[1], reverse=True)
+
+
                 # ============ 1) ANALISIS DE PRESUPUESTO: ULTIMOS 20 DIAS ============
-                resumen += "### Análisis de Cambios de Presupuesto (últimos 20 días)\n\n"
+                resumen += "\n\n ##### Análisis de Cambios de Presupuesto (últimos 20 días)\n\n"
                 fecha_inicio_20dias = fecha_actual - pd.Timedelta(days=20)
                 df_20 = df[df["Date"] >= fecha_inicio_20dias].copy()
 
@@ -249,7 +306,7 @@ if selected_page == "Conversión":
 
                 # b) Itera cada cambio y hace la comparación (7 días pre/post)
                 if df_cambios.empty:
-                    resumen += "No hubo cambios reales de presupuesto en los últimos 20 días.\n"
+                    resumen += "No hubo cambios de presupuesto en los últimos 20 días.\n"
                 else:
                     for idx in df_cambios.index:
                         dia_cambio = df_cambios.loc[idx, "Date"]
@@ -349,7 +406,7 @@ if selected_page == "Conversión":
                             resumen += "  (No hubo datos para comparar 7 días pre/post)\n"
 
                 # ============ 2) ANALISIS DE APAGADOS (últimos 20 días) ============
-                resumen += "\n### Análisis de Apagados (últimos 20 días)\n\n"
+                resumen += "\n##### Anuncios Nuevos y Apagados (últimos 20 días)\n\n"
                 df_apag = df[df["Date"] >= (fecha_actual - pd.Timedelta(days=20))].copy()
 
                 # Iteramos día a día en df_apag, comparando con el día anterior
@@ -452,55 +509,15 @@ if selected_page == "Conversión":
 
                             apagados_mencionados.add(ad_off)
 
-                # ============ 3) Variación CPA (últ. 2 sem vs 2 sem ant) ============
-                cpa_2n = 0
-                cpa_2n_ant = 0
-                if df_ult_2sem["PTP_total"].sum()>0:
-                    cpa_2n = df_ult_2sem["TotalCost"].sum()/df_ult_2sem["PTP_total"].sum()
-                if df_2sem_ant["PTP_total"].sum()>0:
-                    cpa_2n_ant = df_2sem_ant["TotalCost"].sum()/df_2sem_ant["PTP_total"].sum()
-                var_cpa_global = ((cpa_2n - cpa_2n_ant)/cpa_2n_ant*100) if cpa_2n_ant>0 else 0
-
-                resumen += "\n### Variaciones Generales del CPA\n"
-                resumen += (f"- CPA en últimas 2 sem: {cpa_2n:.2f} vs previas: {cpa_2n_ant:.2f} => {var_cpa_global:.2f}%.\n")
-
-                # ============ 4) Leads del mes + última semana ============
-                leads_mes = df_mes_actual["PTP_total"].sum()
-                leads_semana = df_ult_semana["PTP_total"].sum()
-                pct_semana = (leads_semana/leads_mes*100) if leads_mes>0 else 0
-                resumen += "\n### Leads Totales en el Mes Actual\n"
-                resumen += (f"- Total leads del mes: **{leads_mes}**.\n"
-                            f"- Última semana: **{leads_semana}** leads "
-                            f"({pct_semana:.2f}% del total).\n")
-
-                # ============ 5) Regresión lineal de CPA (últ. 2 sem) ============
-                df_ok = df_ult_2sem[
-                    (df_ult_2sem["PTP_total"]>0) &
-                    (df_ult_2sem["TotalCost"]>0) &
-                    (df_ult_2sem["Impressions"]>0)
-                ].copy()
-                tendencias_cpa = []
-                if not df_ok.empty:
-                    for adname, grupo in df_ok.groupby("Adname"):
-                        grupo = grupo.sort_values("Date")
-                        if len(grupo)<2:
-                            continue
-                        x = np.arange(len(grupo)).reshape(-1,1)
-                        y = grupo.apply(lambda row: row["TotalCost"]/row["PTP_total"], axis=1).values.reshape(-1,1)
-                        model = LinearRegression().fit(x, y)
-                        pen = model.coef_[0][0]
-                        tendencias_cpa.append((adname, pen))
-                    tendencias_cpa.sort(key=lambda x: x[1], reverse=True)
-
                 # ============ 6) Conclusión y Estrategia ============
-                resumen += "\n### Conclusión y Estrategia\n"
+                resumen += "\n##### Conclusión y Estrategia\n"
                 if tendencias_cpa:
                     resumen += "Observa estos anuncios con mayor tendencia negativa de CPA:\n"
                     for ad, pen in tendencias_cpa[:3]:
                         resumen += f"- `{ad}` con pendiente {pen:.2f}.\n"
                 else:
                     resumen += "No hubo suficientes datos para tendencias de CPA.\n"
-
+                
             except Exception as e:
                 resumen = f"Ocurrió un error al generar el resumen: {e}"
 
@@ -1153,21 +1170,7 @@ if selected_page == "Conversión":
 
     show_landing = st.checkbox("Mostrar gráfico y tabla de Landings", value=False)
     if show_landing:
-        st.write("## Tasa de Conversión por Landing")
-        # Ordenar por Tasa_de_Conversion
         df_sorted = df_merge.sort_values("Tasa_de_Conversion", ascending=False)
-
-        # GRAFICO
-        fig, ax = plt.subplots(figsize=(6,4), dpi=100)
-        ax.bar(df_sorted["Linkurl"], df_sorted["Tasa_de_Conversion"], color="#78C2F3")
-        ax.set_title("Tasa de Conversión por Landing", fontsize=12, fontname="Helvetica")
-        ax.set_xlabel("Landing", fontsize=10, fontname="Helvetica")
-        ax.set_ylabel("Tasa de Conversión (PTP_total / Landingpageviews)", fontsize=10, fontname="Helvetica")
-        plt.xticks(rotation=45, ha="right", fontsize=9, fontname="Helvetica")
-        plt.yticks(fontsize=9, fontname="Helvetica")
-        plt.tight_layout()
-        st.pyplot(fig)
-
         # TABLA debajo del gráfico, con las columnas solicitadas
         st.write("## Landings y sus Anuncios")
         # Preparamos el DataFrame final
